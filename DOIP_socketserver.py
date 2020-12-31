@@ -242,22 +242,21 @@ class RequestHandler(socketserver.StreamRequestHandler):
         if cname == None:
             self.DOIPstatus.set_code("unauthenticated")
         else:
-            service, jdata = self.handleInputMessage()
+            service, json_input = self.handleInputMessage()
 
             # authorization
             accepted = self.server.auth.get_authorization(cname, service, self.client_address)
             if not accepted:
                  self.DOIPstatus.set_code("unauthorized")
             else:
-                response = ""
+                output_data = ""
                 if service == None:
                     self.DOIPstatus.set_code("object_unknown")
                 else:
-                    response = self.handleOperation(jdata, service, accepted)
+                    output_data = self.handleOperation(json_input, service, input_data = "")
                     if self.DOIPstatus.code == None:
                         self.DOIPstatus.set_code("other")                    
-        jout = '{"status" : ' + self.DOIPstatus.code + ', "available" : ' + json.dumps(service != None) + '}\n'
-        self.handleOutputMessage(jout, response)
+        self.handleOutputMessage(service, output_data)
 
     def handleInputMessage(self):
         """
@@ -265,6 +264,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
         The rfile stays open with pointer on the first line after the '#' delimiter.
         The other segments are handled by the output handle in self.handleOutputMessage().
 
+        @return service type string:  service type identifier
         @return jdata type json:  json element in first segment 
         """
         DOIPRequest = DOIPServerRequestImplementation(self,self.rfile)
@@ -276,15 +276,35 @@ class RequestHandler(socketserver.StreamRequestHandler):
             service = None
         return service, jdata
 
-    def handleOperation(self, data, service, accepted):
-        self.DOIPstatus.set_code("success")
-        return '{ "response" : "OK" }\n'
+    def handleOperation(self, json_input, service, input_data):
+        """
+        The rfile stays open with pointer on the first line after the '#' delimiter.
+        The other segments are handled by the output handle in self.handleOutputMessage().
+
+        @return output_data type array of streams: output of service
+        """
+        DOIPRequest = DOIPServerOperationImplementation(self, json_input, service)
+        output_data = "".encode()
+        return output_data
         
-    def handleOutputMessage(self, data, response):
-        DOIPResponse = DOIPServerResponseImplementation(self, data, response)
+    def handleOutputMessage(self, service, output_data):
+        output_json = {
+            "status":self.DOIPstatus.set_code("success"),
+            "output":{
+                "id":service,
+                "type":"0.TYPE/DOIPService",
+                "attributes":{
+                    "ipAddress":self.server.config.listen_addr,
+                    "port":self.server.config.listen_port,
+                    "protocol":"TCP",
+                    "protocolVersion":"2.0",
+                    "publicKey": self.server.cert_jwk
+                }
+            }
+        }
+        DOIPResponse = DOIPServerResponseImplementation(self, output_json, output_data)
         DOIPResponse.respond()
-        
-    
+
 class DOIPServerRequestImplementation():
     def __init__(self, request_handler, inDOIPMessage):
         """
@@ -414,11 +434,10 @@ class DOIPServerRequestImplementation():
 
 class DOIPServerOperationImplementation():
     
-    def __init__(self, server, data, service, accepted):
+    def __init__(self, server, data, service):
         self.server = server
         self.data = data
         self.service = service
-        self.acccepted = accepted
 
     def handleOperation(self):
         if not accepted:
@@ -429,16 +448,17 @@ class DOIPServerOperationImplementation():
  
 class DOIPServerResponseImplementation():
     
-    def __init__(self, request_handler, data, response):
+    def __init__(self, request_handler, json_response, output_data):
         self.request_handler = request_handler
-        self.data = data
-        self.response = response
+        self.json_response = json_response
+        self.output_data = output_data
 
     def respond(self):
-        self.request_handler.wfile.write(self.data.encode())
-
-    def prepare_respond_data(self):
-        self.request_handler.wfile.write(self.data.encode())
+        response_encoded = json.dumps(self.json_response, sort_keys=True,indent=2, separators=(',', ' : ')).encode()
+        response_encoded += ("\n" + "#" + "\n").encode()
+        response_encoded += self.output_data
+        response_encoded += ("\n" + "#" + "\n").encode()
+        self.request_handler.wfile.write(response_encoded)
 
 class DOIP_status():
 
