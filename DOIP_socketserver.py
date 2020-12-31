@@ -3,6 +3,7 @@ import socketserver
 import ssl
 import json
 from datetime import datetime
+from jwcrypto import jwk
 
 class DOIPServerConfig():
 
@@ -158,6 +159,15 @@ class Auth_Methods():
                 if (key == "commonName"):
                     return value
 
+    def get_server_certificate_jwk_json(self):
+        self.this_jwk = jwk.JWK
+        fd = open(self.config.server_cert)
+        cert = ""
+        for line in fd.readlines():
+            cert += line
+        cert_jwk = self.this_jwk.from_pem(cert.encode())
+        return cert_jwk.export()
+                
 class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
     def __init__(self, server_address, RequestHandlerClass, srv_cfg, bind_and_activate=True):
@@ -195,6 +205,7 @@ class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         #      ...
         self.auth = Auth_Methods(self.context, self.config)
         self.auth.client_verification_mode()
+        self.cert_jwk = self.auth.get_server_certificate_jwk_json()
         
         # bind the socket and start the server
         if (bind_and_activate):
@@ -213,13 +224,16 @@ class RequestHandler(socketserver.StreamRequestHandler):
         Handles requests and answers after authentication and authorization.
         Provides self.rfile and self.wfile for stream sockets.
         Inherites the server and request environment from socketserver.BaseRequestHandler
+        Threading: enabled by server using ThreadingMixIn
+           - all local variables are independent and thread safe
+           - all global variables and variables in for instance self.server are not thread safeand cannot be written without care
         """
         self.server.LogMsg.info(self.client_address,"connection initialized")
         self.DOIPstatus = DOIP_status()
 
         try:
             request_cert = self.request.getpeercert()
-            print (request_cert, self.request.cipher())
+            print (request_cert, self.request.cipher(), self.server.cert_jwk)
         except BrokenPipeError:
             self.server.LogMsg.error(self.client_address,"broken pipe while getting peer cert")
 
@@ -273,6 +287,12 @@ class RequestHandler(socketserver.StreamRequestHandler):
     
 class DOIPServerRequestImplementation():
     def __init__(self, request_handler, inDOIPMessage):
+        """
+        Threading: enabled by server using ThreadingMixIn
+           - all local variables are independent and thread safe
+           - all global variables and variables in for instance self.server = self.request_handler.server are not thread safe and cannot be written without care
+           - all other variables in self.request_handler are independent and thread safe
+        """
         self.request_handler = request_handler
         self.inDOIPMessage = inDOIPMessage
         self.server = self.request_handler.server
