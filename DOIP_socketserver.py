@@ -4,7 +4,7 @@ import ssl
 import json
 from jwcrypto import jwk
 
-import DOIPio
+import DOIPss
 
 default_target = "20.500.123/service"
 
