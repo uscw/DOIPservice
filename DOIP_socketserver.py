@@ -3,15 +3,346 @@ import socketserver
 import ssl
 import json
 from jwcrypto import jwk
+from datetime import datetime
 
-import DOIPss
+#import DOIPio
 
 default_target = "20.500.123/service"
+
+
+class InputMessageProcessing():
+    """
+    This class is used for input message processing and is based 
+    on rfile from the requestHandler.
+    It provides the first and following sections, turns them into json.
+    TODO: Currently only the first section
+
+    if applicable and extracts special elements. 
+       If threading is enabled on server using ThreadingMixIn
+           - all local variables are independent and thread safe
+           - all global variables and variables in for instance self.server = self.request_handler.server are not thread safe and should be written with care
+           - all other variables in self.request_handler are independent and thread safe
+    """
+    def __init__(self, request_handler, inDOIPMessage, config):
+        self.request_handler = request_handler
+        self.inDOIPMessage = inDOIPMessage
+        self.config = config
+        #self.server = self.request_handler.server
+        self.seg_terminator_found = None
+        self.LogMsg = LogMsg(4)
+        
+
+    def getLeadingSegment(self):
+        """
+        returns the leading segment in DOIP format of a DOIP request 
+        as array of lines of the leading segment. 
+        Leaves the stream pointer in rfile on the current position.
+
+        @return darray type array: lines of leading segment 
+        """
+        darray = []
+        try:
+            peer_address = self.request_handler.client_address
+        except:
+            peer_address = ( "server" , "port" )
+        while True:
+            try:
+                line = self.inDOIPMessage.readline().strip()
+                if line == b'#' or line == b'@':
+                    self.seg_terminator_found = line
+                    break
+                elif line == b'':
+                    print("darray", darray)
+                    self.LogMsg.warn(peer_address,"data stream ends without '#' after 1st segment")                        
+                    break
+                else:
+                    darray.append(line)
+            except BrokenPipeError:
+                self.LogMsg.error(peer_address,"broken pipe while reading 1st segment")
+                self.request_handler.DOIPstatus.set_code("other")
+        return darray
+
+    def getFollowingSegments(self):
+        """
+        Returns the following segments of a DOIP request as JSON element. 
+        Uses the stream pointer in rfile on the current position.
+
+        @return segm_array type array: array of all segments represented as arrays of lines 
+        """
+        segm_array = []
+        try:
+            peer_address = self.request_handler.client_address
+        except:
+            peer_address = ( "server" , "port" )
+        try:
+            while True:
+                if self.seg_terminator_found ==  b'@':
+                    num_bytes_str = self.inDOIPMessage.readline().strip()
+                    try:
+                        num_bytes = int(num_bytes_str)
+                    except:
+                        self.LogMsg.error(peer_address,"invalid byte number declaration in byte segment")
+                        self.request_handler.DOIPstatus.set_code = "invalid"
+                else:
+                    data = ""
+                    while True:
+                        try:
+                            line = self.request_handler.rfile.readline().strip()
+                            if line == b'#' or b'@':
+                                self.seg_terminator_found = line
+                                break
+                            elif line == b'':
+                                self.LogMsg.warn(peer_address,"data stream ends without '#' after 1st segment")                        
+                                break
+                            else:
+                                data += line
+                        except BrokenPipeError:
+                            self.LogMsg.error(peer_address,"broken pipe while reading 1st segment")
+                segm_array.append(data)
+        except BrokenPipeError:
+            self.LogMsg.error(self.client_address,"broken pipe while reading following segments")
+        return segm_array
+
+    def _segment_to_json(self, data):
+        """
+        internal function that tries to get JSON out of data
+
+        @param data type iterable object containing lines: input data
+        @return jdata type json.object: data as json object
+        """
+        try:
+            peer_address = self.request_handler.client_address
+        except:
+            peer_address = ( "server" , "port" )
+        obj = b''
+        jdata = None
+        for line in data:
+            obj += line
+        sdata = obj.decode()
+        try:
+            jdata = json.loads(sdata)
+        except json.JSONDecodeError:
+            self.LogMsg.error(peer_address, "JSONDecodeError")# + sdata)
+        return jdata
+        
+    def _get_service_from_leading_json(self, jdata):
+        """
+        internal function that tries to get the service id 
+        and its availabilty on this server out of JSON data.
+
+        @param jdata type json.object: input data as json object
+        @return service type string: service id
+        @return avail type boolean: availabilty on this server
+        """
+        target = jdata["targetId"]
+        operation = jdata["operationId"]
+        service = operation + "@" + target
+        try:
+            peer_address = self.request_handler.client_address
+        except:
+            peer_address = ( "server" , "port" )
+        print (service, self.config.service_ids)
+        try:
+            if operation + "@" in self.config.service_ids[target]:
+                self.LogMsg.info(peer_address,"service requested: " + operation, Method = " target: " + target + " on this server")
+                avail = True
+            else:
+                self.LogMsg.error(peer_address,"unavailable service requested: " + operation, Method = " target: " + target)
+                avail = False
+        except:
+            self.LogMsg.error(peer_address,"unavailable target requested: " + target, Method = " target: " + operation)
+           
+        return avail, service
+
+class OutputMessageProcessing():
+    """
+    This class is used for output message processing and is based 
+    on wfile from the requestHandler.
+    It provides the output data sections and responds
+    TODO: Currently only the first section
+
+       If threading is enabled on server using ThreadingMixIn
+           - all local variables are independent and thread safe
+           - all global variables and variables in for instance self.server = self.request_handler.server are not thread safe and should be written with care
+           - all other variables in self.request_handler are independent and thread safe
+    """
+        
+    def __init__(self, request_handler, json_response, outfile):
+        self.request_handler = request_handler
+        self.json_response = json_response
+        self.outfile = outfile
+
+    def respond(self):
+        """
+        encodes and writes json in DOIP format to wfile from the requestHandler
+        """
+        response_encoded = json.dumps(self.json_response, sort_keys=True,indent=2, separators=(',', ' : ')).encode()
+        response_encoded += ("\n" + "#" + "\n").encode()
+        response_encoded += self.generate_output_data()
+        try:
+            peer_address = self.request_handler.client_address
+        except:
+            peer_address = ( "server" , "port" )
+        try:
+            self.request_handler.wfile.write(response_encoded)
+        except BrokenPipeError:
+            self.LogMsg.error(peer_address,"broken pipe while writing output")
+            self.request_handler.DOIPstatus.set_code("other")
+
+    def generate_output_data(self):
+        """
+        dummy for generating output sections from the outfile buffer
+        
+        @return output_data type string: output sections 
+        """
+        if self.outfile == None:
+            self.output_data = ("#" + "\n").encode()
+        else:
+            self.output_data = "".encode() # self.do_something_with_output_data() 
+            self.output_data += ("#" + "\n").encode()
+        return self.output_data
+        
+class status_codes():
+    """
+    Here the DOIP status codes and get and set functions are defined
+    """
+    def __init__(self):
+        self.codes = {
+            # The operation was successfully processed.
+            "success"                       : "0.DOIP/Status.001",
+            # The request was invalid in some way.
+            "invalid"                       : "0.DOIP/Status.101",
+            # The client did not successfully authenticate.
+            "unauthenticated"               : "0.DOIP/Status.102",
+            # The client successfully authenticated, but is unauthorized to invoke the operation.
+            "unauthorized"                  : "0.DOIP/Status.103",
+            # The digital object is not known to the service to exist.
+            "object_unknown"                : "0.DOIP/Status.104",
+            # The client tried to create a new digital object with an identifier already in use by an existing digital object.
+            "creation_on_existing_object"   : "0.DOIP/Status.105",
+            # The service declines to execute the extended operation.
+            "extended_operation_declined"   : "0.DOIP/Status.200",
+            # Error other than the ones stated above occurred.
+            "other"                         : "0.DOIP/Status.500"
+        }
+        self.code = None 
+
+    def set_code(self,status):
+        self.code = self.codes[status]
+        return self.code
+
+    def get_code(self):
+        return self.code
+    
+class LogMsg():
+    """
+    This class is used to format the log messages of the DOIP server 
+    distinguished by debug, info, warn, error and host messages and 
+    parametrized by the verbosity used for the server.
+    """
+
+    def __init__(self, verbosity):
+        self.verbosity = verbosity
+        
+    def debug(self, client_address, msg, Method=''):
+        """
+        info messages: needed verbosity > 4
+        """
+        if self.verbosity < 5:
+            return
+        message = self._get_utcnow()+ ' DEBUG:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
+        if Method != '':
+            message += ' with ' + Method
+        # logging.debug(message)
+        # app.logger.debug(message)
+        sys.stdout.write(message + "\n")
+        return
+
+    def info(self, client_address, msg, Method=''):
+        """
+        info messages: needed verbosity > 2
+        """
+        if self.verbosity < 3:
+            return
+        message = self._get_utcnow()+ ' INFO:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
+        if Method != '':
+            message += ' with ' + Method
+        # logging.debug(message)
+        # app.logger.debug(message)
+        sys.stdout.write(message + "\n")
+        return
+    
+    def warn(self, client_address, msg, Method=''):
+        """
+        warn messages: needed verbosity > 1
+        """
+        if self.verbosity < 2:
+            return
+        message = self._get_utcnow() + ' WARN:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
+        if Method != '':
+            message += ' with ' + Method
+        # logging.warning(message)
+        # app.logger.warning(message)
+        sys.stderr.write(message + "\n")
+        return
+    
+    def host_message(self, client_address, msg):
+        """
+        host messages: needed verbosity > 1
+        """
+        if self.verbosity < 2:
+            return
+        message = self._get_utcnow() + ' HOST:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
+        # logging.info(message)
+        # app.logger.debug(message)
+        sys.stdout.write(message)
+        return
+    
+    def error(self, client_address, msg,  Method=''):
+        """
+        error messages: needed verbosity > 0
+        """
+        if self.verbosity < 1:
+            return
+        message = self._get_utcnow() + ' ERROR:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
+        if Method != '':
+            message += ' with ' + Method
+        # logging.error(message)
+        # app.logger.error(message)
+        sys.stderr.write(message + "\n")
+
+    def _get_utcnow(self):
+        """
+        returns UTC current time in format "%Y-%m-%dT%H:%M:%S+00:00"
+        """
+        return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    def _shorten_msg(self,msg):
+        try:
+            msg[79]
+            smsg = str(msg[:80]) + " ..."
+        except IndexError:
+            smsg = str(msg)
+        return smsg
+
+
+
+
 
 class DOIPServerConfig():
 
     def __init__(self,
-                 service_ids = ["0.DOIP/Op.Hello@20.500.123/service", "0.DOIP/Op.Create@20.500.123/service", "0.DOIP/Op.Retrieve@20.500.123/service", "0.DOIP/Op.Update@20.500.123/service", "0.DOIP/Op.Delete@20.500.123/service", "0.DOIP/Op.Search@20.500.123/service", "0.DOIP/Op.ListOperations@20.500.123/service"],
+                 service_ids = {
+                     "20.500.123/service" : [
+                         "0.DOIP/Op.Hello@",
+                         "0.DOIP/Op.Create@",
+                         "0.DOIP/Op.Retrieve@",
+                         "0.DOIP/Op.Update@",
+                         "0.DOIP/Op.Delete@",
+                         "0.DOIP/Op.Search@",
+                         "0.DOIP/Op.ListOperations@"
+                     ]
+                 },
                  listen_addr = "127.0.0.1",
                  listen_port = 8443,
                  server_cert = "certs/server.crt",
@@ -39,7 +370,7 @@ class DOIPServerConfig():
         @param config_file         type string: name of configuration file
         @param context_verify_mode type ssl-type: kind of verification mode
         """
-        self.LogMsg = DOIPio.LogMsg(4) 
+        self.LogMsg = LogMsg(4) 
         self.service_ids =         service_ids        
         self.listen_addr =         listen_addr        
         self.listen_port =         listen_port        
@@ -158,10 +489,15 @@ class Auth_Methods():
         @result accepted type boolean: True if accepted
         """
         accepted = False
+        operation = service.split("@")[0]
+        target = service.split("@")[1]
         # Autorization policy to be implemented here
-        if service.split("@")[0] + "@" in self.config.service_ids:
-            if (common_name != None and common_name.lower().split("@")[0] == "ulrich"):
-                accepted = True
+        try:
+            if service.split("@")[0] + "@" in self.config.service_ids[target]:
+                if (common_name != None and common_name.lower().split("@")[0] == "ulrich"):
+                    accepted = True
+        except:
+            self.LogMsg.error(peer_address,"unavailable target requested: " + target, Method = " target: " + operation)
         return accepted
         
     def _get_certificate_common_name(self, cert):
@@ -183,34 +519,35 @@ class Auth_Methods():
                 
 class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
-    def __init__(self, server_address, RequestHandlerClass, srv_cfg, bind_and_activate=True):
+    def __init__(self, RequestHandlerClass, srv_cfg, operations, bind_and_activate=True):
         """
         initialize RequestHandler as ThreadingMixIn TCPServer
         setup server context including SSL support
         setup authentication methods and verification mode
         bind the socket and start the server
-        @param server_address type tuple: listen address and port of server
         @param RequestHandlerClass type socketserver.RequestHandler: type of RequestHandler
         @param srv_cfg type object: configuration parameters
+        @param operations type DOIPServerOperationsClass: implemented DOIP Server Operation methods
         @param bind_and_activate type boolean: default True
         """
-        self.LogMsg = DOIPio.LogMsg(4)
+        self.LogMsg = LogMsg(4)
         
         self.config = srv_cfg
+        self.server_address = (self.config.listen_addr, self.config.listen_port)
         # faster re-binding
         allow_reuse_address = srv_cfg.allow_reuse_address
         # make this bigger than five
         request_queue_size = srv_cfg.request_queue_size 
         # kick connections when we exit
         daemon_threads = srv_cfg.daemon_threads
-        super().__init__(server_address, RequestHandlerClass, False)
+        super().__init__(self.server_address, RequestHandlerClass, False)
 
         # setup server context including SSL support
         self.context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         self.context.load_cert_chain(certfile=srv_cfg.server_cert, keyfile=srv_cfg.server_key)
         # replace the socket with an ssl version of itself
         self.socket = self.context.wrap_socket(self.socket, server_side=True)
-        self.LogMsg.info(server_address,"is address of now initialized server", Method=srv_cfg.server_cert)
+        self.LogMsg.info(self.server_address,"is address of now initialized server", Method=srv_cfg.server_cert)
         # setup authentication methods and verification mode
         #    -  self.context.protocol is defined as  _SSLMethod.PROTOCOL_TLS
         #    -  self.config.context_verify_mode is defined as  VerifyMode.CERT_OPTIONAL
@@ -218,15 +555,17 @@ class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         self.auth = Auth_Methods(self.context, self.config)
         self.auth.client_verification_mode()
         self.cert_jwk = self.auth.get_server_certificate_jwk_json()
-        
+        self.DOIPRequest = operations
+        self.DOIPRequest.set_server(self)
+
         # bind the socket and start the server
         if (bind_and_activate):
             try:
                 self.server_bind()
                 self.server_activate()
-                self.LogMsg.info(server_address,"socket bound and server activated")
+                self.LogMsg.info(self.server_address,"socket bound and server activated")
             except OSError as e:
-                self.LogMsg.error(server_address,"socket not bound :" + repr(e))
+                self.LogMsg.error(self.server_address,"socket not bound :" + repr(e))
                 sys.exit(1)
 
 class RequestHandler(socketserver.StreamRequestHandler):
@@ -241,7 +580,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
            - all global variables and variables in for instance self.server are not thread safeand cannot be written without care
         """
         self.server.LogMsg.info(self.client_address,"connection initialized")
-        self.DOIPStatusCodes = DOIPio.status_codes()
+        self.DOIPStatusCodes = status_codes()
         output_json = {}
 # authentication
         try:
@@ -284,7 +623,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
         @return service type string:  service type identifier
         @return jdata type json:  json element in first segment 
         """
-        DOIPRequest = DOIPio.InputMessageProcessing(self, self.rfile, self.server.config)
+        DOIPRequest = InputMessageProcessing(self, self.rfile, self.server.config)
         # now listen to client
         segment_1st = DOIPRequest.getLeadingSegment()
         jdata = DOIPRequest._segment_to_json(segment_1st)
@@ -300,94 +639,48 @@ class RequestHandler(socketserver.StreamRequestHandler):
 
         @return output_data type array of streams: output of service
         """
-        DOIPRequest = DOIPServerOperationImplementation(self, json_input, service)
-        output_json = DOIPRequest.operateService()
+        output_json = self.server.DOIPRequest.operateService(service, json_input, self.rfile)
         return output_json
         
     def handleOutputMessage(self, output_json):
-        DOIPResponse = DOIPio.OutputMessageProcessing(self, output_json, self.wfile)
+        DOIPResponse = OutputMessageProcessing(self, output_json, self.wfile)
         DOIPResponse.respond()
 
-class DOIPServerOperationImplementation():
+class DOIPServerOperations():
+    def __init__(self):
+        None
+
+    def set_server(self, server):
+        self.server = server
+
+    def operateService(self, service, jsondata, rfile):
+        pass
+
+    def operate_Hello(self, service, jsondata, rfile) :
+        pass
+
+    def operate_Create(self, service, jsondata, rfile) :        
+        pass
+
+    def operate_Retrieve(self, service, jsondata, rfile) :
+        pass
+
+    def operate_Update(self, service, jsondata, rfile) :
+        pass
+
+    def operate_Delete(self, service, jsondata, rfile) :        
+        pass
+
+    def operate_Search(self, service, jsondata, rfile) :
+        pass
     
-    def __init__(self, requestHandler, data, service):
-        self.requestHandler = requestHandler
-        self.data = data
-        self.service = service
-        self.rfile = self.requestHandler.rfile
-        self.wfile = None
+    def operate_ListOperations(self, service, jsondata, rfile) :
+        pass
 
-    def operateService(self):
-        operation = self.service.split("@")[0]
-        target = self.service.split("@")[1]
-        ret = {}
-        if target == default_target:
-            if operation == "0.DOIP/Op.Hello" :
-                ret = self.operate_Hello()
-            elif operation == "0.DOIP/Op.Create" : 
-                ret = self.operate_Create()
-            elif operation == "0.DOIP/Op.Retrieve" : 
-                ret = self.operate_Retrieve()
-            elif operation == "0.DOIP/Op.Update" : 
-                ret = self.operate_Update()
-            elif operation == "0.DOIP/Op.Delete" : 
-                ret = self.operate_Delete()
-            elif operation == "0.DOIP/Op.Search" : 
-                ret = self.operate_Search()
-            elif operation == "0.DOIP/Op.ListOperations" : 
-                ret = self.operate_ListOperations()
-        return ret
+    def operate_Other(self, service, jsondata, rfile) :
+        pass
 
-    def operate_Hello(self) :
-        attr = {}
-        attr["ipAddress"] = self.requestHandler.server.config.listen_addr
-        attr["port"] = self.requestHandler.server.config.listen_port
-        attr["protocol"] = "TCP"
-        attr["protocolVersion"] = "2.0"
-        attr["publicKey"] = json.loads(self.requestHandler.server.cert_jwk)
-        output = {}
-        output["id"] = self.service
-        output["type"] = "0.TYPE/DOIPService"
-        output["attributes"] = attr
-        output_json = {}
-        output_json["status"] = None
-        output_json["output"] = output
-        self.wfile = None
-        return output_json
 
-    def operate_Create(self) :        
-        ret = {}
-        return ret
-
-    def operate_Retrieve(self) :
-        ret = {}
-        return ret
-
-    def operate_Update(self) :
-        ret = {}
-        return ret
-
-    def operate_Delete(self) :        
-        ret = {}
-        return ret
-
-    def operate_Search(self) :
-        ret = {}
-        return ret
-    
-    def operate_ListOperations(self) :
-        target = self.service.split("@")[1]
-        output = []
-        for item in self.requestHandler.server.config.service_ids:
-            if item.split("@")[1] == target:
-                output.append(item.split("@")[0])
-        output_json = {}
-        output_json["status"] = None
-        output_json["output"] = output 
-        self.wfile = None
-        return output_json
-
-    
 ########## main ###########           
 def main(server_config):
     """
@@ -396,9 +689,6 @@ def main(server_config):
     so that we can kill it when we need to.
     bind_and_activate=False can optionally be given in DOIPRequestServer instance
     """
-    server = DOIPRequestServer((server_config.listen_addr,
-                                server_config.listen_port),
-                               RequestHandler, server_config) 
     server.serve_forever()
 
 if __name__ == '__main__':
