@@ -132,7 +132,8 @@ class InputMessageProcessing():
             peer_address = self.request_handler.client_address
         except:
             peer_address = ( "server" , "port" )
-        if service in self.config.service_ids:
+        print (service, self.config.service_ids)
+        if operation + "@" in self.config.service_ids:
             self.LogMsg.info(peer_address,"service requested: " + operation, Method = " target: " + target + " on this server")
             avail = True
         else:

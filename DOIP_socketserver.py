@@ -11,7 +11,7 @@ default_target = "20.500.123/service"
 class DOIPServerConfig():
 
     def __init__(self,
-                 service_ids = ["0.DOIP/Op.Hello@" + default_target, "0.DOIP/Op.Create@" + default_target, "0.DOIP/Op.Retrieve@" + default_target, "0.DOIP/Op.Update@" + default_target, "0.DOIP/Op.Delete@" + default_target, "0.DOIP/Op.Search@" + default_target, "0.DOIP/Op.ListOperations@" + default_target],
+                 service_ids = ["0.DOIP/Op.Hello@20.500.123/service", "0.DOIP/Op.Create@20.500.123/service", "0.DOIP/Op.Retrieve@20.500.123/service", "0.DOIP/Op.Update@20.500.123/service", "0.DOIP/Op.Delete@20.500.123/service", "0.DOIP/Op.Search@20.500.123/service", "0.DOIP/Op.ListOperations@20.500.123/service"],
                  listen_addr = "127.0.0.1",
                  listen_port = 8443,
                  server_cert = "certs/server.crt",
@@ -39,7 +39,7 @@ class DOIPServerConfig():
         @param config_file         type string: name of configuration file
         @param context_verify_mode type ssl-type: kind of verification mode
         """
-        self.LogMsg = DOIPio.LogMsg()
+        self.LogMsg = DOIPio.LogMsg(4) 
         self.service_ids =         service_ids        
         self.listen_addr =         listen_addr        
         self.listen_port =         listen_port        
@@ -125,7 +125,7 @@ class Auth_Methods():
         """
         common_name = None
         try:
-            common_name = self.get_certificate_common_name(request_cert)
+            common_name = self._get_certificate_common_name(request_cert)
             request_handler.server.LogMsg.info(client_address,"common_name: " + common_name )
         except BrokenPipeError:
             request_handler.server.LogMsg.error(client_address,"broken pipe during authentication from")
@@ -159,18 +159,12 @@ class Auth_Methods():
         """
         accepted = False
         # Autorization policy to be implemented here
-        if service in self.config.service_ids:
+        if service.split("@")[0] + "@" in self.config.service_ids:
             if (common_name != None and common_name.lower().split("@")[0] == "ulrich"):
                 accepted = True
         return accepted
         
-    def get_certificate_common_name(self, cert):
-        """
-        provides the common name of a certificate
-
-        @param cert type ssl.certificate: peer certificate 
-        @result value type string: requested common name
-        """
+    def _get_certificate_common_name(self, cert):
         if (cert is None):
             return None
         for sub in cert.get("subject", ()):
@@ -178,15 +172,9 @@ class Auth_Methods():
                 if (key == "commonName"):
                     return value
 
-    def get_server_certificate_jwk_json(self, cert_fn):
-        """
-        provides the Json web key of a certificate given as file
-
-        @param cert_fn type string: filenem of the certificate
-        @result cert_jwk type jwk.json: export format of cetrt in requested jwk format
-        """
+    def get_server_certificate_jwk_json(self):
         self.this_jwk = jwk.JWK
-        fd = open(cert_fn)
+        fd = open(self.config.server_cert)
         cert = ""
         for line in fd.readlines():
             cert += line
@@ -206,7 +194,7 @@ class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         @param srv_cfg type object: configuration parameters
         @param bind_and_activate type boolean: default True
         """
-        self.LogMsg = DOIPio.LogMsg()
+        self.LogMsg = DOIPio.LogMsg(4)
         
         self.config = srv_cfg
         # faster re-binding
@@ -229,7 +217,7 @@ class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         #      ...
         self.auth = Auth_Methods(self.context, self.config)
         self.auth.client_verification_mode()
-        self.cert_jwk = self.auth.get_server_certificate_jwk_json(self.config.server_cert)
+        self.cert_jwk = self.auth.get_server_certificate_jwk_json()
         
         # bind the socket and start the server
         if (bind_and_activate):
@@ -250,13 +238,12 @@ class RequestHandler(socketserver.StreamRequestHandler):
         Inherites the server and request environment from socketserver.BaseRequestHandler
         Threading: enabled by server using ThreadingMixIn
            - all local variables are independent and thread safe
-           - all global variables and variables in for instance self.server are not thread safe 
-             and should be used with care
+           - all global variables and variables in for instance self.server are not thread safeand cannot be written without care
         """
         self.server.LogMsg.info(self.client_address,"connection initialized")
         self.DOIPStatusCodes = DOIPio.status_codes()
         output_json = {}
-        # ***** authentication
+# authentication
         try:
             request_cert = self.request.getpeercert()
             # print (request_cert, self.request.cipher(), self.server.cert_jwk)
@@ -266,25 +253,25 @@ class RequestHandler(socketserver.StreamRequestHandler):
         if cname == None:
             self.DOIPStatusCodes.set_code("unauthenticated")
         else:
-            # ***** Input Processing *****
+# Input Processing
             service, json_input = self.handleInputMessage()
             if service == None:
                 self.DOIPStatusCodes.set_code("object_unknown")
                 output_data = None
             else:
-                # ***** authorization *****
+# authorization
                 accepted = self.server.auth.get_authorization(self, cname, service, self.client_address)
                 if not accepted:
                     self.DOIPStatusCodes.set_code("unauthorized")
                 else:
-                    # ***** Operation *****
+# Operation
                     output_json = self.handleOperation(json_input, service, input_data = "")
                     if output_json != None:
                         self.DOIPStatusCodes.set_code("success")
         if output_json == None or self.DOIPStatusCodes.code == None:
             self.DOIPStatusCodes.set_code("other")
             output_json = {}
-        # ***** Output Processing *****
+# Output Processing
         output_json["status"] = self.DOIPStatusCodes.get_code()
         self.handleOutputMessage(output_json)
 
@@ -321,18 +308,8 @@ class RequestHandler(socketserver.StreamRequestHandler):
         DOIPResponse = DOIPio.OutputMessageProcessing(self, output_json, self.wfile)
         DOIPResponse.respond()
 
-class DOIPServerOperationImplementation():    
-    """
-    Base class for DOIP Server Operation Implementation classes.
-
-    This class is instantiated for each operation to be handled.  The
-    constructor sets the instance variables requestHandler, data
-    and service, takes the rfile with given pointer from the requestHandler 
-    and then calls the operateService() method using this rfile.  
-    To implement a specific service, all you need to do is to derive a class
-    which defines the needed operate_XXX() methods.
-    """
-
+class DOIPServerOperationImplementation():
+    
     def __init__(self, requestHandler, data, service):
         self.requestHandler = requestHandler
         self.data = data
@@ -359,10 +336,6 @@ class DOIPServerOperationImplementation():
                 ret = self.operate_Search()
             elif operation == "0.DOIP/Op.ListOperations" : 
                 ret = self.operate_ListOperations()
-            elif "0.DOIP/Op." in operation : 
-                ret = self.operate_Other()
-            else:
-                ret = None
         return ret
 
     def operate_Hello(self) :
@@ -414,11 +387,8 @@ class DOIPServerOperationImplementation():
         self.wfile = None
         return output_json
 
-    def operate_Other(self) :
-        ret = {}
-        return ret
     
-########## main section ###########           
+########## main ###########           
 def main(server_config):
     """
     This is the server. It handles the sockets. It passes requests to the
