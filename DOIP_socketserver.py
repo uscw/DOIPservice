@@ -680,17 +680,3 @@ class DOIPServerOperations():
     def operate_Other(self, service, jsondata, rfile) :
         pass
 
-
-########## main ###########           
-def main(server_config):
-    """
-    This is the server. It handles the sockets. It passes requests to the
-    listener (the second argument). The server will run in its own thread
-    so that we can kill it when we need to.
-    bind_and_activate=False can optionally be given in DOIPRequestServer instance
-    """
-    server.serve_forever()
-
-if __name__ == '__main__':
-    server_config = DOIPServerConfig(config_file = "srv.cfg")
-    main(server_config)
