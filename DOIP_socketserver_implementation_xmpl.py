@@ -1,45 +1,21 @@
 import sys
-import json
 import DOIP_socketserver as DOIPss
 
-default_target = "20.500.123/service"
-
 class DOIPServerOperationsImplementation(DOIPss.DOIPServerOperations):    
+    """
+    Derived class for DOIP Server Operation Implementation classes based on 
+    its base class DOIPServerOperations. It implements the local operations of the server.
+    """
 
-    def operateService(self, service, jsondata, rfile):
-        operation = service.split("@")[0]
-        target = service.split("@")[1]
-        ret = {}
-        if target == default_target:
-            if operation == "0.DOIP/Op.Hello" :
-                ret = self.operate_Hello(service, jsondata, rfile)
-            elif operation == "0.DOIP/Op.Create" : 
-                ret = self.operate_Create(service, jsondata, rfile)
-            elif operation == "0.DOIP/Op.Retrieve" : 
-                ret = self.operate_Retrieve(service, jsondata, rfile)
-            elif operation == "0.DOIP/Op.Update" : 
-                ret = self.operate_Update(service, jsondata, rfile)
-            elif operation == "0.DOIP/Op.Delete" : 
-                ret = self.operate_Delete(service, jsondata, rfile)
-            elif operation == "0.DOIP/Op.Search" : 
-                ret = self.operate_Search(service, jsondata, rfile)
-            elif operation == "0.DOIP/Op.ListOperations" : 
-                ret = self.operate_ListOperations(service, jsondata, rfile)
-            elif "0.DOIP/Op." in operation : 
-                ret = self.operate_Other(service, jsondata, rfile)
-            else:
-                ret = None
-        return ret
-
-    def operate_Hello(self, service, jsondata, rfile) :
+    def operate_Hello(self) :
         attr = {}
-        attr["ipAddress"] = self.server.config.listen_addr
-        attr["port"] = self.server.config.listen_port
+        attr["ipAddress"] = self.requestHandler.server.config.listen_addr
+        attr["port"] = self.requestHandler.server.config.listen_port
         attr["protocol"] = "TCP"
         attr["protocolVersion"] = "2.0"
-        attr["publicKey"] = json.loads(self.server.cert_jwk)
+        attr["publicKey"] = json.loads(self.requestHandler.server.cert_jwk)
         output = {}
-        output["id"] = service
+        output["id"] = self.service
         output["type"] = "0.TYPE/DOIPService"
         output["attributes"] = attr
         output_json = {}
@@ -48,59 +24,48 @@ class DOIPServerOperationsImplementation(DOIPss.DOIPServerOperations):
         self.wfile = None
         return output_json
 
-    def operate_Create(self, service, jsondata, rfile) :        
-        ret = {}
-        return ret
+    def operate_Create(self) :        
+        return {}
 
-    def operate_Retrieve(self, service, jsondata, rfile) :
-        ret = {}
-        return ret
+    def operate_Retrieve(self) :
+        return {}
 
-    def operate_Update(self, service, jsondata, rfile) :
-        ret = {}
-        return ret
+    def operate_Update(self) :
+        return {}
 
-    def operate_Delete(self, service, jsondata, rfile) :        
-        ret = {}
-        return ret
+    def operate_Delete(self) :        
+        return {}
 
-    def operate_Search(self, service, jsondata, rfile) :
-        ret = {}
-        return ret
+    def operate_Search(self) :
+        return {}
     
-    def operate_ListOperations(self, service, jsondata, rfile) :
-        target = service.split("@")[1]
+    def operate_ListOperations(self) :
+        target = self.service.split("@")[1]
         output = []
-        try:
-            for item in self.server.config.service_ids[target]:
+        for item in self.requestHandler.server.config.service_ids:
+            if item.split("@")[1] == target:
                 output.append(item.split("@")[0])
-        except:
-            None
         output_json = {}
         output_json["status"] = None
         output_json["output"] = output 
         self.wfile = None
         return output_json
 
-    def operate_Other(self, service, jsondata, rfile) :
-        ret = {}
-        return ret
-       
+    def operate_Other(self) :
+        return {}
+
 
 ########## main function ###########           
 def main(server_config):
-    """_x
+    """
     This is the server. It handles the sockets. It passes requests to the
     listener (the second argument). The server will run in its own thread
     so that we can kill it when we need to.
     bind_and_activate=False can optionally be given in DOIPRequestServer instance
     """
-    operations = DOIPServerOperationsImplementation()
-    server = DOIPss.DOIPRequestServer(
-        DOIPss.RequestHandler,
-        server_config,
-        operations
-    ) 
+    server = DOIPss.DOIPRequestServer((server_config.listen_addr,
+                                server_config.listen_port),
+                               DOIPss.RequestHandler, server_config) 
     server.serve_forever()
 
 ########## main section ###########           
@@ -109,4 +74,3 @@ if __name__ == '__main__':
         default_target = sys.argv[1]
     server_config = DOIPss.DOIPServerConfig(config_file = "srv.cfg")
     main(server_config)
-    
