@@ -1,14 +1,21 @@
 import sys
 import json
+import logging
 import DOIP_socketserver as DOIPss
 
 default_target = "20.500.123/service"
 default_dir = "/home/uschwar1/ownCloud/AC/python/xmpls/DOIP_socketserver/"
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    stream=sys.stderr,
+)
+
 class DOIPServerOperationsImplementation(DOIPss.DOIPServerOperations):
 
     def __init__(self):
-        self.LogMsg = DOIPss.LogMsg(4)
+        self.LogMsg = logging.getLogger('DOIPServerOperationsImplementation')
         self.status = DOIPss.status_codes()
 
     def operateService(self, service, jsondata, lastLine, inDOIPMessage):
@@ -50,8 +57,9 @@ class DOIPServerOperationsImplementation(DOIPss.DOIPServerOperations):
         output_json = {}
         output_json["status"] = self.status.codes["success"]
         output_json["output"] = output
-        output_json["input_data"] = len(self.get_FurtherSegments(lastLine, inDOIPMessage))
-        self.wfile = None
+        output_json["input_data"] = self.get_FurtherSegments(lastLine, inDOIPMessage)
+        print ("from Hello",output_json)
+        # self.wfile = None
         return output_json
 
     def operate_Create(self, service, jsondata, lastLine, inDOIPMessage) :        
@@ -106,7 +114,7 @@ def main(server_config):
         DOIPss.RequestHandler,
         server_config,
         operations
-    ) 
+    )
     server.serve_forever()
 
 ########## main section ###########           

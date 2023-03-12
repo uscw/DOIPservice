@@ -1,5 +1,6 @@
 import sys
 import socketserver
+import logging
 import ssl
 import json
 from jwcrypto import jwk
@@ -9,6 +10,15 @@ from datetime import datetime
 
 default_target = "20.500.123/service"
 default_dir = "/home/uschwar1/ownCloud/AC/python/xmpls/DOIP_socketserver/"
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    stream=sys.stderr,
+)
+log = logging.getLogger('main')
+
+
 
 
 class InputMessageProcessing():
@@ -30,7 +40,7 @@ class InputMessageProcessing():
         self.config = config
         #self.server = self.request_handler.server
         self.seg_terminator_found = None
-        self.LogMsg = LogMsg(4)
+        self.LogMsg = logging.getLogger('InputMessageProcessing')
         
 
     def getLeadingJsonSegment(self):
@@ -48,25 +58,25 @@ class InputMessageProcessing():
         json_input = b''
         while True:
             try:
-                line = self.inDOIPMessage.readline()
+                line = self.inDOIPMessage.readline()[:-1] # skip trailing "\n"
                 if line == b'':
-                    self.LogMsg.warn(peer_address,"data stream ends without '#' after 1st segment")                        
+                    self.LogMsg.warn(str(peer_address) + "data stream ends without '#' after 1st segment")                        
                     return json_input, line # EOF reached
                 elif line == b'#':
                     self.seg_terminator_found = line
-                    print ("# terminator", line)
+                    # print ("# terminator", line)
                     break
                 #elif  line[0] == b'@':
                 elif line.startswith(b'@'):
                     self.seg_terminator_found = line
-                    print ("@ terminator", line)
+                    # print ("@ terminator", line)
                     break                    
                 else:
                     json_input += line
             except BrokenPipeError:
-                self.LogMsg.error(peer_address,"broken pipe while reading 1st segment")
+                self.LogMsg.error(str(peer_address) + " broken pipe while reading 1st segment")
                 self.request_handler.DOIPstatus.set_code("other")
-        print ("json_input",json_input)
+        # print ("json_input",json_input)
         return json_input, line
 
     
@@ -77,7 +87,7 @@ class InputMessageProcessing():
         @param data type iterable object containing lines: input data
         @return jdata type json.object: data as json object
         """
-        print("data in _segment_to_json",data)
+        # print("data in _segment_to_json",data)
         try:
             peer_address = self.request_handler.client_address
         except:
@@ -87,7 +97,7 @@ class InputMessageProcessing():
         try:
             jdata = json.loads(sdata)
         except json.JSONDecodeError:
-            self.LogMsg.error(peer_address, "JSONDecodeError")# + sdata)
+            self.LogMsg.error(str(peer_address) + " JSONDecodeError")# + sdata)
             jdata = None
         return jdata
         
@@ -102,7 +112,7 @@ class InputMessageProcessing():
         """
         avail = False
         service = None
-        print ("jdata",jdata)
+        # print ("jdata",jdata)
         try:
             peer_address = self.request_handler.client_address
         except:
@@ -112,17 +122,17 @@ class InputMessageProcessing():
             operation = jdata["operationId"]
             service = operation + "@" + target
         except:
-            self.LogMsg.info(peer_address,"service requires json with targetId and operationId in first segment" )
+            self.LogMsg.info(str(peer_address) + " service requires json with targetId and operationId in first segment" )
         # print (service, self.config.service_ids)
         if service != None:
             try:
                 if operation in self.config.service_ids[target]:
-                    self.LogMsg.info(peer_address,"service requested: " + operation, Method = " target: " + target + " on this server")
+                    self.LogMsg.info(str(peer_address) + " service requested: " + operation + ", target: " + target + " on this server")
                     avail = True
                 else:
-                    self.LogMsg.error(peer_address,"unavailable service requested: " + operation, Method = " target: " + target)
+                    self.LogMsg.error(str(peer_address) + " unavailable service requested: " + operation + ", target: " + target)
             except:
-                self.LogMsg.error(peer_address,"unavailable target requested: " + target, Method = " target: " + operation)
+                self.LogMsg.error(str(peer_address) + " unavailable target requested: " + target + ", target: " + operation)
         return avail, service
 
 class OutputMessageProcessing():
@@ -141,12 +151,13 @@ class OutputMessageProcessing():
         self.request_handler = request_handler
         self.json_response = json_response
         self.outfile = outfile
+        self.LogMsg = logging.getLogger('OutputMessageProcessing')
 
     def respond(self):
         """
         encodes and writes json in DOIP format to wfile from the requestHandler
         """
-        print (self.json_response)
+        # print ("OutputMessageProcessing, respond: ", self.json_response)
         response_encoded = json.dumps(self.json_response, sort_keys=True,indent=2, separators=(',', ' : ')).encode()
         response_encoded += ("\n" + "#" + "\n").encode()
         response_encoded += self.generate_output_data()
@@ -156,8 +167,9 @@ class OutputMessageProcessing():
             peer_address = ( "server" , "port" )
         try:
             self.request_handler.wfile.write(response_encoded)
+            self.LogMsg.info("output written to " +  str(peer_address))
         except BrokenPipeError:
-            self.LogMsg.error(peer_address,"broken pipe while writing output")
+            self.LogMsg.error(str(peer_address) + " broken pipe while writing output")
             self.request_handler.DOIPstatus.set_code("other")
 
     def generate_output_data(self):
@@ -205,100 +217,6 @@ class status_codes():
     def get_code(self):
         return self.code
     
-class LogMsg():
-    """
-    This class is used to format the log messages of the DOIP server 
-    distinguished by debug, info, warn, error and host messages and 
-    parametrized by the verbosity used for the server.
-    """
-
-    def __init__(self, verbosity):
-        self.verbosity = verbosity
-        
-    def debug(self, client_address, msg, Method=''):
-        """
-        info messages: needed verbosity > 4
-        """
-        if self.verbosity < 5:
-            return
-        message = self._get_utcnow()+ ' DEBUG:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
-        if Method != '':
-            message += ' with ' + Method
-        # logging.debug(message)
-        # app.logger.debug(message)
-        sys.stdout.write(message + "\n")
-        return
-
-    def info(self, client_address, msg, Method=''):
-        """
-        info messages: needed verbosity > 2
-        """
-        if self.verbosity < 3:
-            return
-        message = self._get_utcnow()+ ' INFO:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
-        if Method != '':
-            message += ' with ' + Method
-        # logging.debug(message)
-        # app.logger.debug(message)
-        sys.stdout.write(message + "\n")
-        return
-    
-    def warn(self, client_address, msg, Method=''):
-        """
-        warn messages: needed verbosity > 1
-        """
-        if self.verbosity < 2:
-            return
-        message = self._get_utcnow() + ' WARN:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
-        if Method != '':
-            message += ' with ' + Method
-        # logging.warning(message)
-        # app.logger.warning(message)
-        sys.stderr.write(message + "\n")
-        return
-    
-    def host_message(self, client_address, msg):
-        """
-        host messages: needed verbosity > 1
-        """
-        if self.verbosity < 2:
-            return
-        message = self._get_utcnow() + ' HOST:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
-        # logging.info(message)
-        # app.logger.debug(message)
-        sys.stdout.write(message)
-        return
-    
-    def error(self, client_address, msg,  Method=''):
-        """
-        error messages: needed verbosity > 0
-        """
-        if self.verbosity < 1:
-            return
-        message = self._get_utcnow() + ' ERROR:' + ' from ' + str(client_address[0]) + ':' + str(client_address[1]) + ' ' + self._shorten_msg(msg)
-        if Method != '':
-            message += ' with ' + Method
-        # logging.error(message)
-        # app.logger.error(message)
-        sys.stderr.write(message + "\n")
-
-    def _get_utcnow(self):
-        """
-        returns UTC current time in format "%Y-%m-%dT%H:%M:%S+00:00"
-        """
-        return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S+00:00")
-
-    def _shorten_msg(self,msg):
-        try:
-            msg[79]
-            smsg = str(msg[:80]) + " ..."
-        except IndexError:
-            smsg = str(msg)
-        return smsg
-
-
-
-
 
 class DOIPServerConfig():
 
@@ -341,12 +259,12 @@ class DOIPServerConfig():
         @param config_file         type string: name of configuration file
         @param context_verify_mode type ssl-type: kind of verification mode
         """
-        self.LogMsg = LogMsg(4) 
+        self.LogMsg = logging.getLogger('DOIPServerConfig')
         self.service_ids =         service_ids        
         self.listen_addr =         listen_addr        
         self.listen_port =         listen_port        
         self.server_cert =         server_cert
-        print (server_cert)
+        # print (server_cert)
         self.server_key =          server_key         
         self.client_cert =         client_cert        
         self.request_queue_size =  request_queue_size 
@@ -389,10 +307,10 @@ class DOIPServerConfig():
             self.request_queue_size =  cfg["request_queue_size"]
             self.daemon_threads =      cfg["daemon_threads"]
             self.allow_reuse_address = cfg["allow_reuse_address"]
+            self.allow_unauthenticated_access = cfg["allow_unauthenticated_access"]
             self.context_verify_mode = eval(cfg["context_verify_mode"])
         except KeyError as e:
-            sinfo = ( repr(e), " in Config File:" )
-            self.LogMsg.error( sinfo , config_file , " using the Default instead" )
+            self.LogMsg.error( str(repr(e)) + " in Config File:" + config_file + " using the Default instead" )
         return
 
 class Auth_Methods():
@@ -430,10 +348,10 @@ class Auth_Methods():
         try:
             common_name = self._get_certificate_common_name(request_cert)
             if common_name == None:
-                request_handler.server.LogMsg.info(client_address,"common_name: " + str(common_name) + " changed to 'unknown_client'")
+                request_handler.server.LogMsg.info(str(client_address) + " common_name: " + str(common_name) + " changed to 'unknown_client'")
                 common_name = "unknown_client"
         except BrokenPipeError:
-            request_handler.server.LogMsg.error(client_address,"broken pipe during authentication from")
+            request_handler.server.LogMsg.error(str(client_address) + " broken pipe during authentication from")
         return common_name
     
     def get_authorization(self, request_handler, common_name, service, client_address):
@@ -449,9 +367,9 @@ class Auth_Methods():
         accepted = self._is_authorized_by_policy(service,common_name)
         # optionally check client certificate with whitelist, disabled here
         if accepted:
-            request_handler.server.LogMsg.info(client_address,"accepting service {} for common_name: {}".format(service, common_name))
+            request_handler.server.LogMsg.info(str(client_address) + " accepting service {} for common_name: {}".format(service, common_name))
         else:
-            request_handler.server.LogMsg.info(client_address,"rejecting service {} for common_name: {}".format(service, common_name))
+            request_handler.server.LogMsg.info(str(client_address) + " rejecting service {} for common_name: {}".format(service, common_name))
         return accepted
 
     def _is_authorized_by_policy(self, service, common_name):
@@ -473,7 +391,7 @@ class Auth_Methods():
                 if (common_name != None and common_name.lower().split("@")[0] == "ulrich"):
                     accepted = True
         except:
-            self.LogMsg.error(peer_address,"unavailable target requested: " + target, Method = " target: " + operation)
+            self.LogMsg.error(str(peer_address) + " unavailable target requested: " + target + " target: " + operation)
         return accepted
         
     def _get_certificate_common_name(self, cert):
@@ -506,7 +424,7 @@ class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         @param operations type DOIPServerOperationsClass: implemented DOIP Server Operation methods
         @param bind_and_activate type boolean: default True
         """
-        self.LogMsg = LogMsg(4)
+        self.LogMsg = logging.getLogger('DOIPRequestServer')
         
         self.config = srv_cfg
         self.server_address = (self.config.listen_addr, self.config.listen_port)
@@ -523,7 +441,7 @@ class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         self.context.load_cert_chain(certfile=srv_cfg.server_cert, keyfile=srv_cfg.server_key)
         # replace the socket with an ssl version of itself
         self.socket = self.context.wrap_socket(self.socket, server_side=True)
-        self.LogMsg.info(self.server_address,"is address of now initialized server", Method=srv_cfg.server_cert)
+        self.LogMsg.info(str(self.server_address) + " is address of now initialized server with " + srv_cfg.server_cert)
         # setup authentication methods and verification mode
         #    -  self.context.protocol is defined as  _SSLMethod.PROTOCOL_TLS
         #    -  self.config.context_verify_mode is defined as  VerifyMode.CERT_OPTIONAL
@@ -539,9 +457,9 @@ class DOIPRequestServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
             try:
                 self.server_bind()
                 self.server_activate()
-                self.LogMsg.info(self.server_address,"socket bound and server activated")
+                self.LogMsg.info(str(self.server_address) + " socket bound and server activated")
             except OSError as e:
-                self.LogMsg.error(self.server_address,"socket not bound :" + repr(e))
+                self.LogMsg.error(str(self.server_address) + " socket not bound :" + str(repr(e)))
                 sys.exit(1)
 
 class RequestHandler(socketserver.StreamRequestHandler):
@@ -556,7 +474,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
            - all local variables are independent and thread safe
            - all global variables and variables in for instance self.server are not thread safe and cannot be written without care
         """
-        self.server.LogMsg.info(self.client_address,"connection initialized")
+        self.server.LogMsg.info(str(self.client_address) + " connection initialized")
         self.DOIPStatusCodes = status_codes()
         output_json = {}
 #################
@@ -566,11 +484,11 @@ class RequestHandler(socketserver.StreamRequestHandler):
             request_cert = self.request.getpeercert()
             # print (request_cert, self.request.cipher(), self.server.cert_jwk)
         except BrokenPipeError:
-            self.server.LogMsg.error(self.client_address,"broken pipe while getting peer cert")
+            self.server.LogMsg.error(str(self.client_address) + " broken pipe while getting peer cert")
         cname = self.server.auth.get_authentication(self, request_cert, str(self.client_address))
         if cname == None:
             self.DOIPStatusCodes.set_code("unauthenticated")
-            self.server.LogMsg.error(self.client_address,"request could not be authenticated")
+            self.server.LogMsg.error(str(self.client_address) + " request could not be authenticated")
             # output_json = b'{ "status" : self.DOIPStatusCodes.get_code() }'
         else:
             while True:
@@ -580,11 +498,11 @@ class RequestHandler(socketserver.StreamRequestHandler):
                 self.DOIPRequest = InputMessageProcessing(self, self.rfile, self.server.config)
                 service, json_input, lastLine = self.handleInputMessage()
                 if lastLine == b'':
-                    self.server.LogMsg.info(self.client_address,"input stream terminated")
+                    self.server.LogMsg.info(str(self.client_address) + " input stream terminated")
                     break
                 if service == None:
                     self.DOIPStatusCodes.set_code("invalid")
-                    self.server.LogMsg.info(self.client_address,"input invalid")
+                    self.server.LogMsg.info(str(self.client_address) + " input invalid")
                     output_json = { "status" : self.DOIPStatusCodes.get_code() }
                 else:
 #################
@@ -593,25 +511,26 @@ class RequestHandler(socketserver.StreamRequestHandler):
                     accepted = self.server.auth.get_authorization(self, cname, service, self.client_address)
                     if not accepted:
                         self.DOIPStatusCodes.set_code("unauthorized")
-                        self.server.LogMsg.info(self.client_address,"connection unauthorized")
+                        self.server.LogMsg.info(str(self.client_address) + " connection unauthorized")
                         output_json = { "status" : self.DOIPStatusCodes.get_code() }
                     else:
 #################
 # Operation
 #################
                         output_json = self.handleOperationOnFurtherSegments(json_input, service, lastLine, input_data = "")
+                        # print ("Operation gives Output: ", output_json, isinstance(output_json,dict),  "status" not in output_json)
                         if output_json != None and isinstance(output_json,dict) and "status" not in output_json:
                             self.DOIPStatusCodes.set_code("success")
-                            self.server.LogMsg.info(self.client_address,"connection successful answered")
+                            self.server.LogMsg.info(str(self.client_address) + "connection successful answered")
                             output_json["status"] = self.DOIPStatusCodes.get_code()
+                        self.handleOutputMessage(output_json)
             if output_json == None:
                 self.DOIPStatusCodes.set_code("other") #TODO: find better return code
-                self.server.LogMsg.info(self.client_address,"connection not successful")
+                self.server.LogMsg.info(str(self.client_address) + " connection not successful")
                 output_json = {}
 #################
 # Output Processing
 #################
-            output_json["status"] = self.DOIPStatusCodes.get_code()
             self.handleOutputMessage(output_json)
     
 #################
@@ -653,6 +572,11 @@ class RequestHandler(socketserver.StreamRequestHandler):
         DOIPResponse = OutputMessageProcessing(self, output_json, self.wfile)
         DOIPResponse.respond()
 
+
+##########################
+
+##########################
+
 class DOIPServerOperations():
 
     status = status_codes()
@@ -662,7 +586,10 @@ class DOIPServerOperations():
         pass
 
     def set_server(self, server):
-        self.server = server # relates RequestServer to ServerOperations
+        self.server = server # relates server to ServerOperations
+
+    # def set_request_handler(self, request_handler):
+    #     self.request_handler = request_handler # relates RequestServer to ServerOperations
 
     def operateService(self, service, jsondata, lastLine, inDOIPMessage):
         pass
@@ -700,52 +627,52 @@ class DOIPServerOperations():
         @return input_array type array: lines of leading segment 
         """
         try:
-            peer_address = self.request_handler.client_address
+            peer_address = self.server.server_address
         except:
             peer_address = ( "server" , "port" )
         input_array = []
         if  lastLine.startswith(b'@'):
             bytes, success = self.get_bytes_segment(inDOIPMessage,lastLine)
             if success:
-                input_array.append(bytes)
+                input_array.append(bytes.decode())
         byte_input = b''
         terminator_on_last_line = True
         last_line_empty = False
         # input_steam_terminated = False
         while True:
             try:
-                line = inDOIPMessage.readline().strip()
-                print ("in get_FurtherSegments ",line, len(line))
+                line = inDOIPMessage.readline()[:-1]
+                # print ("in get_FurtherSegments ",line, len(line))
                 if line == b'':
-                    self.LogMsg.info(peer_address,"input terminated while reading segments")
+                    self.LogMsg.info(str(peer_address) + " input terminated while reading segments")
                     break # return input_array
                 elif line == b'\n':
                     if last_line_empty:
-                        self.LogMsg.info(peer_address,"empty lines are invalid inputs")
+                        self.LogMsg.info(str(peer_address) + " empty lines are invalid inputs")
                         break
                     else:
                         last_line_empty = True
                 elif line == b'#':
-                    print ("terminator", line, terminator_on_last_line)
+                    # print ("terminator", line, terminator_on_last_line)
                     if terminator_on_last_line:
+                        self.LogMsg.info(str(peer_address) + " input terminated with #")
                         break
                     else:
-                        print (terminator_on_last_line)
                         terminator_on_last_line = True
-                    input_array.append(byte_input)
-                    byte_input = b''
+                        input_array.append(byte_input.decode())
+                        byte_input = b''
                 elif line.startswith(b'@'):
                     byte_input, success = self.get_bytes_segment(inDOIPMessage,lastLine)
                     if success:
-                        input_array.append(byte_input)
+                        input_array.append(byte_input.decode())
                     byte_input = b''
                 else:
                     byte_input += line
                     terminator_on_last_line = False
             except BrokenPipeError:
-                self.LogMsg.error(peer_address,"broken pipe while reading segments")
+                self.LogMsg.error(str(peer_address) + " broken pipe while reading segments")
                 self.request_handler.DOIPstatus.set_code("other")
-        print ("returned with input", input_array)
+        # print ("returned with input", input_array)
         return input_array
 
     def get_bytes_segment(self,inDOIPMessage,lastLine):
@@ -765,9 +692,9 @@ class DOIPServerOperations():
             try:
                 numBytes = int( numBytes )
                 byte_input = inDOIPMessage.read(numBytes)
-                print ("@>>", lastLine, numBytes, byte_input )
+                # print ("@>>", lastLine, numBytes, byte_input )
             except:
-                self.LogMsg.error(peer_address,"string following @ in '" + lastLine.encode() + "' is not an integer")
+                self.LogMsg.error(str(peer_address) + " string following @ in '" + lastLine.encode() + "' is not an integer")
                 self.request_handler.DOIPstatus.set_code("other")
                 success = False
         else:
@@ -775,9 +702,9 @@ class DOIPServerOperations():
             while True:
                 try:
                     line = inDOIPMessage.readline().strip()
-                    print (">>",byte_input, line)
+                    # print (">>",byte_input, line)
                     if line == b'#':
-                        print ("terminator", line)
+                        # print ("terminator", line)
                         break
                     elif line == b'':
                         if last_line_empty:
@@ -787,10 +714,10 @@ class DOIPServerOperations():
                     else:
                         byte_input += line
                 except BrokenPipeError:
-                    self.LogMsg.error(peer_address,"broken pipe while reading 1st segment")
+                    self.LogMsg.error(str(peer_address) + " broken pipe while reading 1st segment")
                     self.request_handler.DOIPstatus.set_code("other")
                     success = False
-        print (byte_input, success)
+        print ("get_bytes_segment",byte_input, success)
         return byte_input, success
 
                 
