@@ -1,26 +1,23 @@
+'''
+Created on 06.03.2023
+
+@author: Ulrich Schwardmann, Göttingen
+@email: uschwar1@gwdg.de
+@license: CC BY-SA
+'''
 import sys
-import socketserver
 import logging
 import ssl
 import json
 import asyncio
 from jwcrypto import jwk
-from datetime import datetime
+import DOIPlogging as DOIPlog
 
 #import DOIPio
 
-default_target = "20.500.123/service"
-default_dir = "/home/uschwar1/ownCloud/AC/python/xmpls/DOIP_socketserver/"
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-    stream=sys.stderr,
-)
-log = logging.getLogger('main')
-
-
-
+# default_target = "20.500.123/service"
+# default_dir = "/home/uschwar1/ownCloud/AC/python/xmpls/DOIP_socketserver/"
+DOIPlog.config()
 
 class InputMessageProcessing():
     """
@@ -243,13 +240,14 @@ class DOIPServerConfig():
                  },
                  listen_addr = "127.0.0.1",
                  listen_port = 8443,
-                 server_cert = default_dir + "certs/server.crt",
-                 server_key = default_dir + "certs/server.key",
-                 client_cert = default_dir + "certs/clients.txt",
+                 server_cert = "certs/server.crt",
+                 server_key =  "certs/server.key",
+                 client_cert = "certs/clients.txt",
                  request_queue_size = 10,
                  daemon_threads = True,
                  allow_reuse_address = True,
                  config_file = None,
+                 config_path = None,
                  context_verify_mode = ssl.CERT_OPTIONAL
     ):
         """
@@ -265,23 +263,25 @@ class DOIPServerConfig():
         @param request_queue_size  type int: size of request queue
         @param daemon_threads      type boolean: daemon threads allowed
         @param allow_reuse_address type boolean: reuse of address allowed
+        @param config_path         type string: path to configuration and cert files
         @param config_file         type string: name of configuration file
         @param context_verify_mode type ssl-type: kind of verification mode
         """
         self.LogMsg = logging.getLogger('DOIPServerConfig')
-        self.service_ids =         service_ids        
+        self.service_ids =         service_ids       
         self.listen_addr =         listen_addr        
         self.listen_port =         listen_port        
-        self.server_cert =         server_cert
-        # print (server_cert)
-        self.server_key =          server_key         
-        self.client_cert =         client_cert        
         self.request_queue_size =  request_queue_size 
         self.daemon_threads =      daemon_threads     
         self.allow_reuse_address = allow_reuse_address
         self.context_verify_mode = context_verify_mode
-        if config_file != None:
-            self.read_config_file(config_file)
+        self.config_file = config_file
+        self.config_path = config_path
+        if self.config_path != None and self.config_file != None:
+            self.read_config_file(self.config_path + self.config_file)
+        self.server_cert = self.config_path + server_cert
+        self.server_key =  self.config_path + server_key         
+        self.client_cert = self.config_path + client_cert        
 
             
     def read_config_file(self, config_file):
@@ -318,12 +318,13 @@ class DOIPServerConfig():
             self.allow_reuse_address = cfg["allow_reuse_address"]
             self.allow_unauthenticated_access = cfg["allow_unauthenticated_access"]
             self.context_verify_mode = eval(cfg["context_verify_mode"])
+            
         except KeyError as e:
             self.LogMsg.error( str(repr(e)) + " in Config File:" + config_file + " using the Default instead" )
         return
-
+    
 class Auth_Methods():
-    def __init__(self, context, config):
+    def __init__(self, context, config, config_path):
         """
         Defines authentication mode, provides authorization and authentication for a DOIPRequestServer
 
@@ -343,7 +344,7 @@ class Auth_Methods():
         also verifies source locations, if cert and key are provided by client, cert needs to be known in srv_cfg.client_cert (authorization)
         """
         self.context.verify_mode = self.config.context_verify_mode # ssl.CERT_OPTIONAL
-        self.context.load_verify_locations(cafile=default_dir + self.config.client_cert)
+        self.context.load_verify_locations(cafile=self.config.client_cert)
 
     def get_authentication(self, request_handler, request_cert, client_address):
         """
@@ -395,7 +396,7 @@ class Auth_Methods():
         target = service.split("@")[1]
         # Authorization policy to be implemented here
         try:
-            if operation in self.config.service_ids[target]:
+            if target in self.config.service_ids and operation in self.config.service_ids[target]: 
                 if operation == "0.DOIP/Op.Hello" or operation == "0.DOIP/Op.ListOperations":
                     accepted = True
                 elif (common_name != None and common_name.lower().split("@")[0] == "ulrich"):
@@ -418,7 +419,7 @@ class Auth_Methods():
 
     def get_server_certificate_jwk_json(self):
         self.this_jwk = jwk.JWK
-        fd = open(default_dir + self.config.server_cert)
+        fd = open(self.config.server_cert)
         cert = ""
         for line in fd.readlines():
             cert += line
@@ -431,16 +432,14 @@ class asyncioRequestHandler():
     def __init__(self, config, operations):
         self.config = config
         self.operations = operations
-        config_path = "/home/uschwar1/ownCloud/AC/python/xmpls/DOIP_socketserver/"
-        self.server_cert = config_path + self.config.server_cert #"certs/server.crt"
-        self.server_key =  config_path + self.config.server_key #"certs/server.key"
+        self.config_path = self.config.config_path
         self.server_addr = self.config.listen_addr
         self.server_port = self.config.listen_port
         
         # setup server context including SSL support
         self.SSL_CONTEXT = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        self.SSL_CONTEXT.load_cert_chain(certfile=self.server_cert, keyfile=self.server_key)
-        self.auth = Auth_Methods(self.SSL_CONTEXT, self.config)
+        self.SSL_CONTEXT.load_cert_chain(certfile=self.config.server_cert, keyfile=self.config.server_key)
+        self.auth = Auth_Methods(self.SSL_CONTEXT, self.config, self.config_path)
         self.auth.client_verification_mode()
         self.cert_jwk = self.auth.get_server_certificate_jwk_json()
 
@@ -583,7 +582,28 @@ class DOIPServerOperations():
         self.server = server # relates server to ServerOperations
 
     async def operateService(self, service, jsondata, lastLine, inDOIPMessage, peer_address):
-        pass
+        operation = service.split("@")[0]
+        self.client_address = peer_address
+        ret = {}
+        if operation == "0.DOIP/Op.Hello" :
+            ret = await self.operate_Hello(service, jsondata, lastLine, inDOIPMessage)
+        elif operation == "0.DOIP/Op.Create" : 
+            ret = await self.operate_Create(service, jsondata, lastLine, inDOIPMessage)
+        elif operation == "0.DOIP/Op.Retrieve" : 
+            ret = await self.operate_Retrieve(service, jsondata, lastLine, inDOIPMessage)
+        elif operation == "0.DOIP/Op.Update" : 
+            ret = await self.operate_Update(service, jsondata, lastLine, inDOIPMessage)
+        elif operation == "0.DOIP/Op.Delete" : 
+            ret = await self.operate_Delete(service, jsondata, lastLine, inDOIPMessage)
+        elif operation == "0.DOIP/Op.Search" : 
+            ret = await self.operate_Search(service, jsondata, lastLine, inDOIPMessage)
+        elif operation == "0.DOIP/Op.ListOperations" : 
+            ret = await self.operate_ListOperations(service, jsondata, lastLine, inDOIPMessage)
+        elif "0.DOIP/Op." in operation : 
+            ret = await self.operate_Other(service, jsondata, lastLine, inDOIPMessage)
+        else:
+            ret = await self.operate_Other(service, jsondata, lastLine, inDOIPMessage)
+        return ret
 
     def operate_Hello(self, service, jsondata, lastLine, inDOIPMessage, peer_address) :
         pass
@@ -607,7 +627,7 @@ class DOIPServerOperations():
         pass
 
     def operate_Other(self, service, jsondata, lastLine, inDOIPMessage, peer_address) :
-        pass
+        return None
 
     async def get_FurtherSegments(self, lastLine, inDOIPMessage, peer_address):
         """
@@ -619,7 +639,7 @@ class DOIPServerOperations():
         """
         input_array = []
         if  lastLine.startswith(b'@'):
-            byte_input, success = self.get_bytes_segment(inDOIPMessage,lastLine)
+            byte_input, success = await self.get_bytes_segment(inDOIPMessage,lastLine, peer_address)
             if success:
                 input_array.append(byte_input.decode())
         byte_input = b''
@@ -649,7 +669,7 @@ class DOIPServerOperations():
                         input_array.append(byte_input.decode())
                         byte_input = b''
                 elif line.startswith(b'@'):
-                    byte_input, success = await self.get_bytes_segment(inDOIPMessage,lastLine)
+                    byte_input, success = await self.get_bytes_segment(inDOIPMessage, lastLine, peer_address)
                     if success:
                         input_array.append(byte_input.decode())
                     byte_input = b''
@@ -666,11 +686,18 @@ class DOIPServerOperations():
         """
         From DOIP-Specification:
         a bytes segment, which contains arbitrary bytes. 
-        A bytes segment must begin with a single line of text starting with the at-sign character ("@") optionally followed by whitespace terminated by a newline; this line is followed by the bytes in a chunked encoding, which consists of zero or more chunks. 
+        A bytes segment must begin with a single line of text starting with the 
+        at-sign character ("@") optionally followed by whitespace terminated 
+        by a newline; 
+        this line is followed by the bytes in a chunked encoding, 
+        which consists of zero or more chunks. 
         Each chunk has:
-        - a line of text starting with the UTF-8 representation of a positive decimal number (the size of the chunk excluding the delimiters), optionally followed by whitespace, and terminated by a newline character;
-        - as many bytes as indicated by the size, optionally followed by whitespace, and followed by a newline character; or
-"
+        - a line of text starting with the UTF-8 representation of a positive decimal 
+          number (the size of the chunk excluding the delimiters), 
+          optionally followed by whitespace, and terminated by a newline character;
+        - as many bytes as indicated by the size, optionally followed by whitespace, 
+          and followed by a newline character; or
+        - an empty segment, which indicates the end of the request or response.
         """
 
         success = True
