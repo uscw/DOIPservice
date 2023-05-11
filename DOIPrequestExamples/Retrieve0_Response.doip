@@ -1,0 +1,32 @@
+{
+  "status":"0.DOIP/Status.1",
+  "output":{
+      "id":"test/0a4d55a8d778e5022fab",
+      "type":"Document",
+      "attributes":{
+          "content":{
+              "id":"test/0a4d55a8d778e5022fab",
+              "name":"Hello World"
+          },
+          "metadata":{
+              "createdOn":1537469656224,
+              "createdBy":"test/12dea96fec20593566ab",
+              "modifiedOn":1537469656235,
+              "modifiedBy":"test/12dea96fec20593566ab",
+              "txnId":7
+          }
+      },
+      "elements":[
+          {
+              "id":"file",
+              "length":0,
+              "type":"text/plain",
+              "attributes":{
+                  "filename":"helloworld.txt"
+              }
+          }
+      ]
+  }
+}
+#
+#

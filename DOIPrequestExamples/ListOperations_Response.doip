@@ -1,0 +1,6 @@
+{
+  "status":"0.DOIP/Status.1",
+  "output":["0.DOIP/Op.Hello","0.DOIP/Op.ListOperations","0.DOIP/Op.Create","0.DOIP/Op.Search"]
+}
+#
+#

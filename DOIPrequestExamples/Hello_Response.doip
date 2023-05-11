@@ -1,0 +1,20 @@
+{
+  "status":"0.DOIP/Status.1",
+  "output":{
+          "id":"20.500.123/service",
+          "type":"0.TYPE/DOIPService",
+          "attributes":{
+              "ipAddress":"127.0.0.1",
+              "port":9000,
+              "protocol":"TCP",
+              "protocolVersion":"2.0",
+              "publicKey":{
+                  "kty":"RSA",
+                  "n":"m2MIsyH7F7NMA9EABMfPjzbid3MIh9vTP28MKVKFN2waUnPlsb_JM9OfE0cwyRUXuehuNUm7CbaQmOINOFsQhoQBGyj12TnC_Lm__Rgf7Shvl0xKFr83YTa7Zw7HWqOMb_4kY2O7OdV98RIc6oD62cY7j1E_fiudzOnFh5SaXvP3qS3OrNrOA4gODQdplhNikwP5_VwCA45lDnfVBO2Dj62oFl55-BeIc1YQoJ_kkN-8JbNsd3kGKZnq7VDSrGfLAyLLyML9dE7jRK3qxR5Ok_va49KGvQV-krssyacBAIVk1zBUQ8lFnxBcH6g_0Hl_h_zcv-jtfeCCCoZ4sB46Hw==",
+                  "e":"AQAB"
+              }
+          }
+  }
+}
+#
+#

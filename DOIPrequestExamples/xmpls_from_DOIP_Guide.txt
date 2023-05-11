@@ -1,0 +1,322 @@
+https://www.cordra.org/documentation/api/doip.html
+
+
+Hello
+
+Request:
+
+{
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.Hello"
+}
+#
+#
+
+Response:
+
+{
+  "status":"0.DOIP/Status.1",
+  "output":{
+          "id":"20.500.123/service",
+          "type":"0.TYPE/DOIPService",
+          "attributes":{
+              "ipAddress":"127.0.0.1",
+              "port":9000,
+              "protocol":"TCP",
+              "protocolVersion":"2.0",
+              "publicKey":{
+                  "kty":"RSA",
+                  "n":"m2MIsyH7F7NMA9EABMfPjzbid3MIh9vTP28MKVKFN2waUnPlsb_JM9OfE0cwyRUXuehuNUm7CbaQmOINOFsQhoQBGyj12TnC_Lm__Rgf7Shvl0xKFr83YTa7Zw7HWqOMb_4kY2O7OdV98RIc6oD62cY7j1E_fiudzOnFh5SaXvP3qS3OrNrOA4gODQdplhNikwP5_VwCA45lDnfVBO2Dj62oFl55-BeIc1YQoJ_kkN-8JbNsd3kGKZnq7VDSrGfLAyLLyML9dE7jRK3qxR5Ok_va49KGvQV-krssyacBAIVk1zBUQ8lFnxBcH6g_0Hl_h_zcv-jtfeCCCoZ4sB46Hw==",
+                  "e":"AQAB"
+              }
+          }
+  }
+}
+#
+#
+
+List Operations
+
+Request:
+
+{
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.ListOperations"
+}
+#
+#
+
+Response:
+
+{
+  "status":"0.DOIP/Status.1",
+  "output":["0.DOIP/Op.Hello","0.DOIP/Op.ListOperations","0.DOIP/Op.Create","0.DOIP/Op.Search"]
+}
+#
+#
+
+Search
+
+Request:
+
+{
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.Search",
+  "attributes": {
+    "query": "+type:Schema +/name:User"
+  }
+}
+#
+#
+
+Response:
+
+{"status":"0.DOIP/Status.1"}
+#
+{
+  "size": 1,
+  "results": [
+    {
+      "id": "test/ccf24d69f39aafee2195",
+      "type": "Schema",
+      "attributes": {
+        "content": {
+          "identifier": "test/ccf24d69f39aafee2195",
+          "name": "User",
+          "schema": {
+             ...
+          }
+        }
+      }
+    }
+  ]
+}
+#
+#
+
+Create
+
+In general a creation request must specify the “type” and an “attribute” called “content”. If you wish to specify the id of the newly created object, specify an “id” as a sibling property of “type” and “attributes”.
+
+Request:
+
+{
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.Create",
+  "input": {
+    "type": "User",
+    "attributes": {
+      "content": {
+        "username": "user",
+        "password": "password"
+      }
+    }
+  },
+  "authentication": {
+    "username": "admin",
+    "password": "password"
+  }
+}
+#
+#
+
+Response:
+
+{
+  "status":"0.DOIP/Status.1",
+  "output":{
+      "id":"test/12dea96fec20593566ab",
+      "type":"User",
+      "attributes":{
+          "content":{
+              "id":"test/12dea96fec20593566ab",
+              "username":"user",
+              "password":""
+          },
+          "metadata":{
+              "createdOn":1537467895407,
+              "createdBy":"admin",
+              "modifiedOn":1537467895450,
+              "modifiedBy":"admin",
+              "txnId":6
+          }
+      },
+      "elements":[]
+  }
+}
+#
+#
+
+Request:
+
+{
+  "clientId": "test/12dea96fec20593566ab",
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.Create",
+  "authentication": {
+    "password": "password"
+  }
+}
+#
+{
+  "type": "Document",
+  "attributes": {
+    "content": {
+      "id": "",
+      "name": "Hello World"
+    }
+  },
+  "elements": [
+    {
+      "id": "file",
+      "type": "text/plain",
+      "attributes": {
+        "filename": "helloworld.txt"
+      }
+    }
+  ]
+}
+#
+{"id":"file"}
+#
+@
+12
+Hello World
+
+#
+#
+
+Response:
+
+{
+  "status":"0.DOIP/Status.1",
+  "output":{
+      "id":"test/0a4d55a8d778e5022fab",
+      "type":"Document",
+      "attributes":{
+          "content":{
+              "id":"test/0a4d55a8d778e5022fab",
+              "name":"Hello World"
+          },
+          "metadata":{
+              "createdOn":1537469656224,
+              "createdBy":"test/12dea96fec20593566ab",
+              "modifiedOn":1537469656235,
+              "modifiedBy":"test/12dea96fec20593566ab",
+              "txnId":7
+          }
+      },
+      "elements":[
+          {
+              "id":"file",
+              "length":0,
+              "type":"text/plain",
+              "attributes":{
+                  "filename":"helloworld.txt"
+              }
+          }
+      ]
+  }
+}
+#
+#
+
+Retrieve
+
+Request:
+
+{
+  "targetId": "test/0a4d55a8d778e5022fab",
+  "operationId": "0.DOIP/Op.Retrieve"
+}
+#
+#
+
+Response:
+
+{
+  "status":"0.DOIP/Status.1",
+  "output":{
+      "id":"test/0a4d55a8d778e5022fab",
+      "type":"Document",
+      "attributes":{
+          "content":{
+              "id":"test/0a4d55a8d778e5022fab",
+              "name":"Hello World"
+          },
+          "metadata":{
+              "createdOn":1537469656224,
+              "createdBy":"test/12dea96fec20593566ab",
+              "modifiedOn":1537469656235,
+              "modifiedBy":"test/12dea96fec20593566ab",
+              "txnId":7
+          }
+      },
+      "elements":[
+          {
+              "id":"file",
+              "length":0,
+              "type":"text/plain",
+              "attributes":{
+                  "filename":"helloworld.txt"
+              }
+          }
+      ]
+  }
+}
+#
+#
+
+Request:
+
+{
+  "targetId": "test/0a4d55a8d778e5022fab",
+  "operationId": "0.DOIP/Op.Retrieve",
+  "attributes": {
+    "element": "file"
+  }
+}
+#
+#
+
+Response:
+
+{"status":"0.DOIP/Status.1"}
+#
+@
+12
+Hello World
+
+#
+#
+
+Extended Operations
+
+Cordra enables developers to extend the core functionality and expose that as extended operations. See Type Methods for how to write extended operations.
+
+In the case of functionality that is added as an instance Type method, the targetId of the DOIP operation will be digital object identifier to which this instance Type method should be applied. In the case of any static Type method, the targetId will be the digital object identifier of the Type. In either case, the operationId is the identifier that is specified in the JavaScript export statement associated with the method definition.
+
+Below you will find the DOIP request and response structures that applies to the static Type method defined here.
+
+Request:
+
+{
+  "targetId": "test/7060f82cc15962ba4851",
+  "operationId": "123/abc",
+  "authentication": { "username": "admin", "password": "password" },
+  "input": {"foo":"hello", "bar":"world"}
+}
+#
+#
+
+Here test/7060f82cc15962ba4851 is the identifier of the Type digital object on which the static Type method is defined.
+
+Response:
+
+{
+  "status":"0.DOIP/Status.001",
+  "output":{"input":{"foo":"hello","bar":"world"},"timestamp":1568752848904}
+}
+#
+#
+

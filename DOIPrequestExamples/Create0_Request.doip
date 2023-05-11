@@ -1,0 +1,19 @@
+{
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.Create",
+  "input": {
+    "type": "User",
+    "attributes": {
+      "content": {
+        "username": "user",
+        "password": "password"
+      }
+    }
+  },
+  "authentication": {
+    "username": "admin",
+    "password": "password"
+  }
+}
+#
+#

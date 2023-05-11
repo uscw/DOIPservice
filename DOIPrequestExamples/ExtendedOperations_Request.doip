@@ -1,0 +1,8 @@
+{
+  "targetId": "test/7060f82cc15962ba4851",
+  "operationId": "123/abc",
+  "authentication": { "username": "admin", "password": "password" },
+  "input": {"foo":"hello", "bar":"world"}
+}
+#
+#

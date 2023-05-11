@@ -1,0 +1,24 @@
+{
+  "status":"0.DOIP/Status.1",
+  "output":{
+      "id":"test/12dea96fec20593566ab",
+      "type":"User",
+      "attributes":{
+          "content":{
+              "id":"test/12dea96fec20593566ab",
+              "username":"user",
+              "password":""
+          },
+          "metadata":{
+              "createdOn":1537467895407,
+              "createdBy":"admin",
+              "modifiedOn":1537467895450,
+              "modifiedBy":"admin",
+              "txnId":6
+          }
+      },
+      "elements":[]
+  }
+}
+#
+#

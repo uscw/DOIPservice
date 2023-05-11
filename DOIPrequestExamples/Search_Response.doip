@@ -1,0 +1,22 @@
+{"status":"0.DOIP/Status.1"}
+#
+{
+  "size": 1,
+  "results": [
+    {
+      "id": "test/ccf24d69f39aafee2195",
+      "type": "Schema",
+      "attributes": {
+        "content": {
+          "identifier": "test/ccf24d69f39aafee2195",
+          "name": "User",
+          "schema": {
+             ...
+          }
+        }
+      }
+    }
+  ]
+}
+#
+#

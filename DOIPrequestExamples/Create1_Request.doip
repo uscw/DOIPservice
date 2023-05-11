@@ -1,0 +1,35 @@
+{
+  "clientId": "test/12dea96fec20593566ab",
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.Create",
+  "authentication": {
+    "password": "password"
+  }
+}
+#
+{
+  "type": "Document",
+  "attributes": {
+    "content": {
+      "id": "",
+      "name": "Hello World"
+    }
+  },
+  "elements": [
+    {
+      "id": "file",
+      "type": "text/plain",
+      "attributes": {
+        "filename": "helloworld.txt"
+      }
+    }
+  ]
+}
+#
+{"id":"file"}
+#
+@
+12
+Hello World
+#
+#

@@ -1,0 +1,9 @@
+{
+  "targetId": "20.500.123/service",
+  "operationId": "0.DOIP/Op.Search",
+  "attributes": {
+    "query": "+type:Schema +/name:User"
+  }
+}
+#
+#
