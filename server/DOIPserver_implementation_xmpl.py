@@ -13,6 +13,8 @@ import DOIPutils.DOIPlogging as DOIPlog
 import DOIPutils.DOIPcodes as DOIPcodes
 import DOIPutils.DOIPauth as DOIPauth
 import server.DOIPoperations as DOIPops
+import transport.InDOIPmessage as InDOIPmessage
+#from transport import inDOIPmessage
 
 default_target = "20.500.123/service"
 # allowed_targets = [default_target]
@@ -27,6 +29,7 @@ class DOIPServerAuthMethodsImplementation(DOIPauth.DOIPServerAuthMethods):
         @param context type context of DOIPRequestServer: context of server
         @param config type configuration of DOIPRequestServer: configuration of server
         """
+
         self.config = config
         self.LogMsg = logging.getLogger('DOIPServerAuthMethodsImplementation')
         self.status = DOIPcodes.status_codes()
@@ -44,7 +47,7 @@ class DOIPServerOperationsImplementation(DOIPops.DOIPServerOperations):
         self.LogMsg = logging.getLogger('DOIPServerOperationsImplementation')
         self.status = DOIPcodes.status_codes()
 
-    async def operate_Hello(self, service, jsondata, lastLine, inDOIPMessage, requestId) :
+    async def operate_Hello(self, service, jsondata, lastLine, requestId, DOIPrequest) :
         attr = {}
         attr["requestId"] = requestId
         attr["ipAddress"] = self.server.config.listen_addr
@@ -59,36 +62,36 @@ class DOIPServerOperationsImplementation(DOIPops.DOIPServerOperations):
         output_json = {}
         output_json["status"] = self.status.codes["success"]
         output_json["output"] = output
-        output_json["input_data"] = await self.get_FurtherSegments(lastLine, inDOIPMessage, self.client_address)
+        output_json["input_data"] = await DOIPrequest.get_FurtherSegments(lastLine)
         self.LogMsg.debug(" output from 0.DOIP/Op.Hello: " + str(output_json))
         return output_json
 
-    async def operate_Create(self, service, jsondata, lastLine, inDOIPMessage, requestId) :        
+    async def operate_Create(self, service, jsondata, lastLine, requestId, DOIPrequest) :        
         ret = {}
         await asyncio.sleep(0)
         return ret
  
-    async def operate_Retrieve(self, service, jsondata, lastLine, inDOIPMessage, requestId) :
+    async def operate_Retrieve(self, service, jsondata, lastLine, requestId, DOIPrequest) :
         ret = {}
         await asyncio.sleep(0)
         return ret
 
-    async def operate_Update(self, service, jsondata, lastLine, inDOIPMessage, requestId) :
+    async def operate_Update(self, service, jsondata, lastLine, requestId, DOIPrequest) :
         ret = {}
         await asyncio.sleep(0)
         return ret
 
-    async def operate_Delete(self, service, jsondata, lastLine, inDOIPMessage, requestId) :        
+    async def operate_Delete(self, service, jsondata, lastLine, requestId, DOIPrequest) :        
         ret = {}
         await asyncio.sleep(0)
         return ret
 
-    async def operate_Search(self, service, jsondata, lastLine, inDOIPMessage, requestId) :
+    async def operate_Search(self, service, jsondata, lastLine, requestId, DOIPrequest) :
         ret = {}
         await asyncio.sleep(0)
         return ret
     
-    async def operate_ListOperations(self, service, jsondata, lastLine, inDOIPMessage, requestId) :
+    async def operate_ListOperations(self, service, jsondata, lastLine, requestId, DOIPrequest) :
         target = service.split("@")[1]
         output = []
         try:
@@ -100,11 +103,11 @@ class DOIPServerOperationsImplementation(DOIPops.DOIPServerOperations):
         output_json["requestId"] = requestId
         output_json["status"] = self.status.codes["success"]
         output_json["output"] = output 
-        output_json["input_data"] = await self.get_FurtherSegments(lastLine, inDOIPMessage, self.client_address)
+        output_json["input_data"] = await InDOIPmessage.get_FurtherSegments(lastLine, self.client_address)
         self.LogMsg.debug(str(self.client_address) + " output from 0.DOIP/Op.Hello: " + str(output_json))
         return output_json
 
-    async def operate_Other(self, service, jsondata, lastLine, inDOIPMessage, requestId) :
+    async def operate_Other(self, service, jsondata, lastLine, requestId) :
         ret = {}
         await asyncio.sleep(0)
         return ret

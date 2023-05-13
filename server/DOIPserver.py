@@ -182,7 +182,7 @@ class asyncioRequestHandler():
 
         @return output_data type array of streams: output of service
         """
-        output_json = await self.operations.operateService(service, input_json, lastLine, self.rfile, self.client_address, requestId)
+        output_json = await self.operations.operateService(service, input_json, lastLine, self.client_address, requestId, self.DOIPRequest)
         return output_json
         
     async def handleOutputMessage(self, output_json):
